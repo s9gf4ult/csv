@@ -1,0 +1,16 @@
+[1 of 1] Compiling Main             ( /tmp/stack11301/cairo-0.13.3.1/Setup.hs, /tmp/stack11301/cairo-0.13.3.1/.stack-work/dist/x86_64-linux/Cabal-1.24.0.0/setup/Main.o )
+
+/tmp/stack11301/cairo-0.13.3.1/Setup.hs:8:29: error:
+    • Couldn't match expected type ‘Distribution.Simple.UserHooks.UserHooks’
+                  with actual type ‘Cabal-1.24.2.0:Distribution.Simple.UserHooks.UserHooks’
+      NB: ‘Cabal-1.24.2.0:Distribution.Simple.UserHooks.UserHooks’
+            is defined in ‘Distribution.Simple.UserHooks’
+                in package ‘Cabal-1.24.2.0’
+          ‘Distribution.Simple.UserHooks.UserHooks’
+            is defined in ‘Distribution.Simple.UserHooks’
+                in package ‘Cabal-1.24.0.0’
+    • In the first argument of ‘defaultMainWithHooks’, namely
+        ‘gtk2hsUserHooks’
+      In the expression: defaultMainWithHooks gtk2hsUserHooks
+      In an equation for ‘main’:
+          main = defaultMainWithHooks gtk2hsUserHooks
