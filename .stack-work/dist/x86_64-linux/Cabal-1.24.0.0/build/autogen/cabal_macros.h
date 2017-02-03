@@ -14,12 +14,19 @@
   (major1) == 4 && (major2) <  9 || \
   (major1) == 4 && (major2) == 9 && (minor) <= 0)
 
-/* package GLUT-2.7.0.11 */
-#define VERSION_GLUT "2.7.0.11"
-#define MIN_VERSION_GLUT(major1,major2,minor) (\
-  (major1) <  2 || \
-  (major1) == 2 && (major2) <  7 || \
-  (major1) == 2 && (major2) == 7 && (minor) <= 0)
+/* package Cabal-1.24.2.0 */
+#define VERSION_Cabal "1.24.2.0"
+#define MIN_VERSION_Cabal(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  24 || \
+  (major1) == 1 && (major2) == 24 && (minor) <= 2)
+
+/* package gtk2hs-buildtools-0.13.2.2 */
+#define VERSION_gtk2hs_buildtools "0.13.2.2"
+#define MIN_VERSION_gtk2hs_buildtools(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  13 || \
+  (major1) == 0 && (major2) == 13 && (minor) <= 2)
 
 /* package strings-1.1 */
 #define VERSION_strings "1.1"

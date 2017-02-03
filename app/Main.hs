@@ -4,23 +4,29 @@ import Lib
 import System.Environment
 import Data.Strings
 import Graphics.UI.Gtk
---import Graphics.UI.GLUT
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import qualified Data.Text.Internal as T
+import qualified Data.DateTime as DT
 
-func :: String -> (String, String)
-func str = (head (strSplitAll "," str), head (tail (strSplitAll "," str)))
+func :: T.Text -> (T.Text, T.Text, DT.DateTime)
+func str = (zFilter !! 0, zFilter !! 1, DT.fromSeconds (read (T.unpack (zFilter !! 0))) )
+            where zFilter = filter (\x -> if x /= T.pack (",") then True else False) z
+                  z = T.groupBy (\x y -> if (x /= ',' && y /= ',') then True else False) str            
 
-doArray :: [String] -> [(String, String)]
+doArray :: [T.Text] -> [(T.Text, T.Text, DT.DateTime)]
 doArray a = map func a
 
---hello :: (ButtonClass o) => o -> IO ()
---hello b = set b [buttonLabel := "Hello World"]
+unpack' :: (T.Text, T.Text, DT.DateTime) -> (String, String, String, (Integer, Int, Int, Int, Int, Int))
+unpack' (x, y, z) = (T.unpack x, T.unpack y, show z, DT.toGregorian z)
 
 main = do
-    contents <- readFile "pomodoros.csv"
-    let todoTasks = lines contents
+    contents <- T.readFile "pomodoros.csv"
+    let todoTasks = T.lines contents
         res = doArray todoTasks
-
-{-    initGUI
+        x = map unpack' res
+   
+    {-initGUI
     window <- windowNew
     button <- buttonNew
     set window [windowDefaultWidth := 200, windowDefaultHeight := 200,
@@ -29,7 +35,8 @@ main = do
     onDestroy window mainQuit
     widgetShowAll window
     mainGUI-}
-    print $ res
+    
+    print $ x
     putStrLn "End"
 
 {-main = do
