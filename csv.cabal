@@ -27,7 +27,6 @@ executable csv-exe
   build-depends:       base
                      , csv
                      , strings
-                     , Cabal >= 1.24.2
                      , gtk
                      , text
                      , datetime
