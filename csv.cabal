@@ -30,6 +30,11 @@ executable csv-exe
                      , gtk
                      , text
                      , datetime
+                     , cassava
+                     , bytestring
+                     , vector
+                     , time
+                     , utility-ht
   default-language:    Haskell2010
 
 test-suite csv-test

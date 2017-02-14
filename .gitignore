@@ -1,0 +1,10 @@
+.stack-work/
+csv._cabal
+pomodoros.old_csv
+stack._yaml
+app/Main.1302hs
+app/Main._hs
+app/Main.UTCTimehs
+app/Main1002.hs
+app/Main_DayStringInt.1402hs
+app/pomodoros._csv
