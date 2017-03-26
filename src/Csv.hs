@@ -1,13 +1,19 @@
-module Csv where
+module Csv
+  ( get_pomodoros
+  , get_sort_list
+  , print_grouped_pomodoros
+  ) where
 
 import qualified Data.ByteString.Lazy as BL
 import Data.Csv
-import qualified Data.Vector as V
-import Data.List
-import Data.Time
+import Data.Foldable
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as M
 import Data.Maybe
+import Data.Ratio
+import Data.Time
 import Data.Time.Calendar.OrdinalDate (mondayStartWeek)
-import Data.Time.Clock
+import qualified Data.Vector as V
 
 import System.IO.Unsafe
 
@@ -18,6 +24,17 @@ data Data_csv = Data_csv {
     zoned_time :: ZonedTime
  } deriving (Show)
 
+
+instance FromRecord Data_csv where
+  parseRecord v = do
+    f0 <- v .! 0
+    f1 <- v .! 1
+    f2 <- (parseTimeM True defaultTimeLocale iso8601 f0)
+    return $ Data_csv f0 f1 f2
+
+-- После сделанный преобразований данный тип не особо нужен, ведь мы
+-- печатаем только секунды, а группируем по значениям, которые можно
+-- вывести из 'Data_csv'
 data Pomodoros = Pomodoros {
     day :: Day,
     sum_sec :: Int,
@@ -31,15 +48,15 @@ data Pomodoros = Pomodoros {
 data PartOfDay = Morning_9_12 | Afternoon_12_17 | Evening_17_24 | Night_24_9
      deriving (Show, Eq, Ord)
 
-instance FromRecord Data_csv where
-  parseRecord v = do
-    f0 <- v .! 0
-    f1 <- v .! 1
-    f2 <- (parseTimeM True defaultTimeLocale iso8601 f0)
-    return $ Data_csv f0 f1 f2
+data GroupedPomodoros
+  = ByDay (Map Day [Pomodoros])
+  | ByWeekDay (Map Int [Pomodoros]) -- Тут ключ - день недели, число от 1 до 7
+  | ByHour (Map Int [Pomodoros]) -- Тут ключ - час внутри дня
+  | ByPartOfDay (Map PartOfDay [Pomodoros])
+  deriving (Show)
 
 listFromCsv :: BL.ByteString -> IO [Data_csv]
-listFromCsv csvData = 
+listFromCsv csvData =
     case decode NoHeader csvData of
         Left err -> fail (err ++ " !!!")
         Right v -> return $ V.toList v
@@ -49,7 +66,7 @@ calcPartOfDay h = if (h >= 9) && (h < 12) then Morning_9_12
                   else if (h >= 12) && (h < 17) then Afternoon_12_17
                        else if (h >= 17) && (h < 24) then Evening_17_24
                             else Night_24_9
-                  
+
 valuesToList :: Data_csv -> Maybe Pomodoros
 valuesToList (Data_csv a b c) = Just $ Pomodoros dayFromCsv b day_week time_of_day_zone hour part_day
         where dayFromCsv = localDay localTime
@@ -63,101 +80,8 @@ valuesToList (Data_csv a b c) = Just $ Pomodoros dayFromCsv b day_week time_of_d
               time_of_day_zone = snd $ utcToLocalTimeOfDay x time_of_day
               part_day = calcPartOfDay hour
 
-sumPomodoros :: Int -> [Pomodoros] -> Pomodoros
-sumPomodoros type_gr array = case type_gr of
-    1 -> Pomodoros (day (head array)) sum_sec (day_week (head array)) midday 0 (calcPartOfDay 0)   --по дням
-            where sum_sec = foldl (\x (Pomodoros a b c d e f) -> x+b) 0 array
-    2 -> Pomodoros (fromGregorian 0 0 0) sumArray (day_week (head array)) midday 0 (calcPartOfDay 0)    --по дням недели
-            where sumArray = foldl (\x (Pomodoros a b c d e f) -> x+b) 0 array
-    3 -> Pomodoros (fromGregorian 0 0 0) sumArray 0 midday (hour (head array)) (calcPartOfDay (hour (head array)))    --по часам
-            where sumArray = foldl (\x (Pomodoros a b c d e f) -> x+b) 0 array
-    4 -> Pomodoros (fromGregorian 0 0 0) sumArray 0 midday (hour (head array)) (calcPartOfDay (hour (head array)))    --по части суток
-            where sumArray = foldl (\x (Pomodoros a b c d e f) -> x+b) 0 array
-
-equalPomodoros :: Int -> Pomodoros -> Pomodoros -> Bool
-equalPomodoros type_gr p1 p2 = case type_gr of
-       1 -> if (day p1) == (day p2) then True else False     --группировка по дням
-       2 -> if (day_week p1) == (day_week p2) then True else False     --по дням недели
-       3 -> if (hour p1) == (hour p2) then True else False     --по часам
-       4 -> if (part_day p1) == (part_day p2) then True else False      --часть суток
-
 iso8601 :: String
 iso8601 = iso8601DateFormat $ Just "%H:%M:%S%Q%z"
-
-sortGT :: Int -> Pomodoros -> Pomodoros -> Ordering
-sortGT type_gr p1 p2 = case type_gr of
-    1 -> case (day p1) > (day p2) of
-            True -> GT
-            otherwise -> LT
-    2 -> case (day_week p1) > (day_week p2) of
-            True -> GT
-            otherwise -> LT
-    3 -> case (hour p1) > (hour p2) of
-            True -> GT
-            otherwise -> LT
-    4 -> case (part_day p1) > (part_day p2) of
-            True -> GT
-            otherwise -> LT
-
---не использую groupBy
-group_pom :: Int -> [Pomodoros] -> [[Pomodoros]]
-group_pom type_gr x = if null x_no
-                      then [x_yes]
-                      else [x_yes] ++ (group_pom type_gr x_no)
-                      where p = partition (equalPomodoros type_gr (head x)) x
-                            x_yes = fst p
-                            x_no = snd p
-                            res = (group_pom type_gr x_no)
-
-printList :: Integer -> Integer -> [Pomodoros] -> String
-printList _ _ [] = ""
-printList typeGr inEl (x:xs) = printRecord typeGr inEl x ++ "\n" ++ printList typeGr inEl xs
-
-printRecord :: Integer -> Integer -> Pomodoros -> String
-printRecord type_gr inEl p = case type_gr of
-   --по дням
-   1 -> "day = " ++ show (day p)
-        -- ++ "  sum_sec = " ++ show (sum_sec p)
-        ++ "  minute = " ++ show (div (sum_sec p) 60)
-        ++ "\t" ++ grafPomodoros (toInteger (sum_sec p)) inEl
-   --по дням недели
-   2 -> "day_week = " ++ show (day_week p) 
-        -- ++ "  sum_sec = " ++ show (sum_sec p)
-        ++ "  minute = " ++ show (div (sum_sec p) 60)
-        ++ "\t" ++ grafPomodoros (toInteger (sum_sec p)) inEl
-   --по часам
-   3 -> "hour = " ++ show (hour p) 
-        -- ++ "  sum_sec = " ++ show (sum_sec p)
-        ++ "  minute = " ++ show (div (sum_sec p) 60)
-        ++ "\t" ++ grafPomodoros (toInteger (sum_sec p)) inEl
-   --часть суток
-   4 -> "part_day = " ++ show (part_day p) 
-        -- ++ "  sum_sec = " ++ show (sum_sec p)
-        ++ "  minute = " ++ show (div (sum_sec p) 60)
-        ++ "\t" ++ grafPomodoros (toInteger (sum_sec p)) inEl
-
-grafPomodoros :: Integer -> Integer -> String
-grafPomodoros sec inEl = str (div sec inEl)
-
-str :: Integer -> String
-str 0 = ""
-str count = "|" ++ str (count-1)
-
-max_pom :: [Pomodoros] -> Int
-max_pom [] = 0
-max_pom x = max (sum_sec $ head x) (max_pom (tail x))
-
-min_pom :: [Pomodoros] -> Int
-min_pom [] = maxBound :: Int
-min_pom x = min (sum_sec $ head x) (min_pom (tail x))
-
---максимальное количество символов '|' в одной строке
-countEl :: Integer
-countEl = 40
-
---количество секунд в одном символе '|'
-countSecInEl :: Integer -> Integer
-countSecInEl x_max = div x_max countEl
 
 nothing_bool :: [Maybe Pomodoros] -> Bool
 nothing_bool [] = False
@@ -170,25 +94,123 @@ get_pomodoros str = do
         let list = map valuesToList ar
 
         --Из 7го ишуса - программа должна честно сообщать об ошибках, чтобы пользователь мог принять меры
-        if nothing_bool list then putStrLn "function valuesToList - error ZonedTime" else putStr ""    
+        if nothing_bool list then putStrLn "function valuesToList - error ZonedTime" else putStr ""
         let list_pomodoros = catMaybes $ list
         return list_pomodoros
 
+-- Тут и дальше группировка помидоров
+
 --тип группировки тоже возвращаю, чтобы в Main соответствующе распечатать
-get_sort_list :: [Pomodoros] -> IO ([Pomodoros], Int)
+get_sort_list :: [Pomodoros] -> IO GroupedPomodoros
 get_sort_list list_pomodoros = do
         putStrLn "1 - группировка по дням"
         putStrLn "2 - группировка по дням недели"
         putStrLn "3 - группировка по часам дня"
         putStrLn "4 - группировка по части суток"
         type_gr_str <- getLine
-        let type_gr = read type_gr_str
-        if elem type_gr [1,2,3,4] then do
-                --сначала группирую
-                let groupList = map (sumPomodoros type_gr) (group_pom type_gr list_pomodoros)
-                --потом сортирую
-                let groupSortList = (sortBy (sortGT type_gr) groupList)
-                return (groupSortList, type_gr)
-        else do
-                --putStrLn "Нет такого типа группировки"
-                return ([], type_gr)
+        case type_gr_str of
+          "1" -> return $ groupByDay list_pomodoros
+          "2" -> return $ groupByWeek list_pomodoros
+          "3" -> return $ groupByHour list_pomodoros
+          "4" -> return $ groupByPartOfDay list_pomodoros
+          _   -> get_sort_list list_pomodoros
+            -- Запустить вопрос повторно, если пользователь ошибся
+
+groupByDay :: [Pomodoros] -> GroupedPomodoros
+groupByDay poms = ByDay $ M.fromListWith (++) $ map go poms
+  where
+    go :: Pomodoros -> (Day, [Pomodoros])
+    go pom = (day pom, [pom])
+
+groupByWeek :: [Pomodoros] -> GroupedPomodoros
+groupByWeek poms = ByWeekDay $ M.fromListWith (++) $ map go poms
+  where
+    go :: Pomodoros -> (Int, [Pomodoros])
+    go pom = (snd $ mondayStartWeek $ day pom, [pom])
+
+groupByHour :: [Pomodoros] -> GroupedPomodoros
+groupByHour poms = ByHour $ M.fromListWith (++) $ map go poms
+  where
+    go :: Pomodoros -> (Int, [Pomodoros])
+    go pom = (todHour $ time_of_day pom, [pom])
+
+groupByPartOfDay :: [Pomodoros] -> GroupedPomodoros
+groupByPartOfDay poms = ByPartOfDay $ M.fromListWith (++) $ map go poms
+  where
+    go :: Pomodoros -> (PartOfDay, [Pomodoros])
+    go pom = (part_day pom, [pom])
+
+
+-- Тут и ниже функции для вывода на печать
+print_grouped_pomodoros :: GroupedPomodoros -> IO ()
+print_grouped_pomodoros gpoms = case gpoms of
+  ByDay m -> do
+    let
+      daysList :: [(Day, [Pomodoros])]
+      daysList = M.toAscList m
+        -- Тут мы получаем сортированные по дням список пар. Так как в
+        -- словаре ключи хранятся в уже сортированном виде
+      sums :: [(Day, Int)]
+      sums = summPomodors daysList
+      maxLen = maximum $ map snd sums
+    for_ sums $ \(day, secs) -> do
+      let str = showDay day ++ showSecs maxLen secs
+      putStrLn str
+  ByWeekDay m -> do
+    let
+      weeksList :: [(Int, [Pomodoros])]
+      weeksList = M.toAscList m
+      sums = summPomodors weeksList
+      maxLen = maximum $ map snd sums
+    for_ sums $ \(weekDay, secs) -> do
+      let str = showWeek weekDay ++ showSecs maxLen secs
+      putStrLn str
+  ByHour m -> do
+    let
+      hoursList = M.toAscList m
+      sums = summPomodors hoursList
+      maxLen = maximum $ map snd sums
+    for_ sums $ \(hour, secs) -> do
+      putStrLn $ showHour hour ++ showSecs maxLen secs
+  ByPartOfDay m -> do
+    let
+      partsList = M.toAscList m
+      sums = summPomodors partsList
+      maxLen = maximum $ map snd sums
+    for_ sums $ \(pd, secs) -> do
+      putStrLn $ showPartDay pd ++ showSecs maxLen secs
+
+summPomodors :: [(a, [Pomodoros])] -> [(a, Int)]
+summPomodors a = map go a
+  where
+    go (a, poms) = (a, sum $ map sum_sec poms)
+
+normalizeLen :: String -> String
+normalizeLen s = take l $ s ++ spaces
+  where
+    spaces = replicate (max 0 $ l - length s) ' '
+    l = 15 -- Длинна строки, к которой подогнать данную строку
+
+showDay :: Day -> String
+showDay d = (normalizeLen $ show d) ++ ": "
+
+showSecs :: Int -> Int -> String
+showSecs maxLen secs = replicate bars '|'
+  where
+    bars = floor $ maxBars * (secs % maxLen)
+    -- Тут я использовал небольшой трюк: оператор (%) на самом деле
+    -- конструироует рациональное число с типом `Ratio Int`, которое
+    -- домножается на 50 (тоже того же типа, который выводится
+    -- неявно), затем округляю полученное рациональное число до
+    -- целого. Таким образом, любое целое число от 0 до maxLen будет
+    -- нормализовано до целого числа от 0 до 50
+    maxBars = 50
+
+showWeek :: Int -> String
+showWeek wd = (normalizeLen $ show wd) ++ ": "
+
+showHour :: Int -> String
+showHour h = (normalizeLen $ show h) ++ ": "
+
+showPartDay :: PartOfDay -> String
+showPartDay pd = (normalizeLen $ show pd) ++ ": "
